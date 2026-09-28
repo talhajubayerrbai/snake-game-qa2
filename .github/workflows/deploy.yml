@@ -1,0 +1,160 @@
+name: Deploy snake-game-qa2
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: "Git SHA to deploy"
+        required: false
+      udap_run_id:
+        description: "UDAP run id"
+        required: false
+
+concurrency:
+  group: deploy-${{ vars.TF_STATE_KEY }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+      - run: npm test
+
+  provision:
+    name: Provision
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      public_ip: ${{ steps.tf_output.outputs.public_ip }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.0"
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: infra
+        run: |
+          terraform init -input=false -reconfigure \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ vars.TF_STATE_KEY }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
+
+      - name: Terraform apply
+        working-directory: infra
+        run: |
+          terraform apply -input=false -auto-approve \
+            -var="ssh_public_key=${{ vars.SSH_PUBLIC_KEY }}" \
+            -var="aws_region=${{ vars.AWS_REGION }}"
+
+      - name: Get outputs
+        id: tf_output
+        working-directory: infra
+        run: |
+          echo "public_ip=$(terraform output -raw public_ip)" >> "$GITHUB_OUTPUT"
+
+  configure:
+    name: Configure
+    needs: provision
+    runs-on: ubuntu-latest
+    env:
+      PUBLIC_IP: ${{ needs.provision.outputs.public_ip }}
+      GIT_SHA: ${{ inputs.revision || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+
+      - name: Package artifact
+        run: |
+          tar -czf "snake-game-qa2-${GIT_SHA}.tar.gz" \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='infra' \
+            --exclude='scripts' \
+            --exclude='.github' \
+            --exclude='.udap' \
+            .
+
+      - name: Create GitHub Release and upload artifact
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GIT_SHA}" \
+            --title "Deploy ${GIT_SHA}" \
+            --notes "Automated release for commit ${GIT_SHA}" \
+            "snake-game-qa2-${GIT_SHA}.tar.gz" \
+            || echo "Release may already exist, continuing"
+
+      - name: Write SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${PUBLIC_IP}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Wait for SSH to be available
+        run: |
+          for i in $(seq 1 20); do
+            if ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+                ec2-user@"${PUBLIC_IP}" "echo ok" 2>/dev/null; then
+              echo "SSH ready"
+              break
+            fi
+            echo "Waiting for SSH... attempt $i"
+            sleep 15
+          done
+
+      - name: Run configure script on instance
+        run: |
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            scripts/configure.sh \
+            ec2-user@"${PUBLIC_IP}":/tmp/configure.sh
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ec2-user@"${PUBLIC_IP}" \
+            "chmod +x /tmp/configure.sh && sudo /tmp/configure.sh '${GIT_SHA}' '${{ secrets.GITHUB_TOKEN }}' '${{ github.repository }}'"
+
+  verify:
+    name: Verify
+    needs: [provision, configure]
+    runs-on: ubuntu-latest
+    env:
+      PUBLIC_IP: ${{ needs.provision.outputs.public_ip }}
+    steps:
+      - name: Health check
+        run: |
+          echo "Checking http://${PUBLIC_IP}/health ..."
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${PUBLIC_IP}/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed (HTTP 200)"
+              echo "Live URL: http://${PUBLIC_IP}"
+              exit 0
+            fi
+            echo "Attempt $i: got HTTP $STATUS, retrying in 15s..."
+            sleep 15
+          done
+          echo "Health check failed after 3 minutes"
+          exit 1
