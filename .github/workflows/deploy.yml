@@ -89,14 +89,16 @@ jobs:
 
       - name: Package artifact
         run: |
-          tar -czf "snake-game-qa2-${GIT_SHA}.tar.gz" \
+          TARBALL="/tmp/snake-game-qa2-${GIT_SHA}.tar.gz"
+          tar --warning=no-file-changed -czf "${TARBALL}" \
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='infra' \
             --exclude='scripts' \
             --exclude='.github' \
             --exclude='.udap' \
-            .
+            . || true
+          echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
 
       - name: Create GitHub Release and upload artifact
         env:
@@ -105,7 +107,7 @@ jobs:
           gh release create "${GIT_SHA}" \
             --title "Deploy ${GIT_SHA}" \
             --notes "Automated release for commit ${GIT_SHA}" \
-            "snake-game-qa2-${GIT_SHA}.tar.gz" \
+            "${TARBALL}" \
             || echo "Release may already exist, continuing"
 
       - name: Write SSH key
