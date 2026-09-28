@@ -100,16 +100,6 @@ jobs:
             . || true
           echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
 
-      - name: Create GitHub Release and upload artifact
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "${GIT_SHA}" \
-            --title "Deploy ${GIT_SHA}" \
-            --notes "Automated release for commit ${GIT_SHA}" \
-            "${TARBALL}" \
-            || echo "Release may already exist, continuing"
-
       - name: Write SSH key
         run: |
           mkdir -p ~/.ssh
@@ -129,14 +119,20 @@ jobs:
             sleep 15
           done
 
-      - name: Run configure script on instance
+      - name: Upload artifact and configure script to instance
         run: |
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            "${TARBALL}" \
+            ec2-user@"${PUBLIC_IP}":/tmp/snake-game-qa2.tar.gz
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             scripts/configure.sh \
             ec2-user@"${PUBLIC_IP}":/tmp/configure.sh
+
+      - name: Run configure script on instance
+        run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             ec2-user@"${PUBLIC_IP}" \
-            "chmod +x /tmp/configure.sh && sudo /tmp/configure.sh '${GIT_SHA}' '${{ secrets.GITHUB_TOKEN }}' '${{ github.repository }}'"
+            "chmod +x /tmp/configure.sh && sudo /tmp/configure.sh /tmp/snake-game-qa2.tar.gz"
 
   verify:
     name: Verify
