@@ -1,0 +1,105 @@
+{
+  "edges": [
+    {
+      "from": "user",
+      "id": "user-eip-0",
+      "kind": "routes_to",
+      "props": {},
+      "to": "eip"
+    },
+    {
+      "from": "eip",
+      "id": "eip-snake_game_qa2-0",
+      "kind": "routes_to",
+      "props": {},
+      "to": "snake_game_qa2"
+    },
+    {
+      "from": "snake_game_qa2",
+      "id": "snake_game_qa2-sg-0",
+      "kind": "uses",
+      "props": {},
+      "to": "sg"
+    },
+    {
+      "from": "snake_game_qa2",
+      "id": "snake_game_qa2-iam_profile-0",
+      "kind": "uses",
+      "props": {},
+      "to": "iam_profile"
+    },
+    {
+      "from": "snake_game_qa2",
+      "id": "snake_game_qa2-ssh_key-0",
+      "kind": "uses",
+      "props": {},
+      "to": "ssh_key"
+    }
+  ],
+  "groups": [
+    {
+      "id": "snake_game_qa2_env",
+      "kind": "environment",
+      "label": "snake-game-qa2",
+      "ref": {
+        "id": "env_01a0e90602de48db0e380ba19819d245",
+        "kind": "environment"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "group": null,
+      "id": "user",
+      "name": "Player (Browser)",
+      "props": {},
+      "type": "external.user"
+    },
+    {
+      "group": "snake_game_qa2_env",
+      "id": "snake_game_qa2",
+      "name": "snake-game-qa2",
+      "props": {
+        "instance_type": "t3.micro",
+        "region": "us-east-1"
+      },
+      "type": "service.ec2"
+    },
+    {
+      "group": null,
+      "id": "eip",
+      "name": "Elastic IP",
+      "props": {
+        "cidr": "0.0.0.0/32",
+        "notes": "Elastic IP attached to the EC2 instance; address is stable across stops/starts"
+      },
+      "type": "resource.network"
+    },
+    {
+      "group": null,
+      "id": "sg",
+      "name": "Security Group (22, 80)",
+      "props": {},
+      "type": "resource.other"
+    },
+    {
+      "group": null,
+      "id": "iam_profile",
+      "name": "IAM Instance Profile (SSM)",
+      "props": {},
+      "type": "resource.other"
+    },
+    {
+      "group": null,
+      "id": "ssh_key",
+      "name": "EC2 Key Pair",
+      "props": {},
+      "type": "resource.other"
+    }
+  ],
+  "scope": {
+    "id": "svc_01a0e90f7d24ad9e103bc43b8c71c5d0",
+    "kind": "service"
+  },
+  "version": 1
+}

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snake Game</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Courier New', monospace;
+      color: #e0e0e0;
+    }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; color: #00ff88; }
+    #score { font-size: 1.2rem; margin-bottom: 1rem; }
+    canvas {
+      border: 3px solid #00ff88;
+      box-shadow: 0 0 20px rgba(0,255,136,0.4);
+      background: #0f0f1a;
+    }
+    #message {
+      margin-top: 1rem;
+      font-size: 1rem;
+      color: #aaa;
+      min-height: 1.5em;
+    }
+    #restart {
+      margin-top: 0.8rem;
+      padding: 0.5rem 1.5rem;
+      background: #00ff88;
+      color: #1a1a2e;
+      border: none;
+      font-size: 1rem;
+      font-family: inherit;
+      cursor: pointer;
+      border-radius: 4px;
+      display: none;
+    }
+    #restart:hover { background: #00cc6a; }
+  </style>
+</head>
+<body>
+  <h1>🐍 Snake</h1>
+  <div id="score">Score: 0</div>
+  <canvas id="game" width="400" height="400"></canvas>
+  <div id="message">Press any arrow key to start</div>
+  <button id="restart">Restart</button>
+
+  <script>
+    const CELL = 20;
+    const COLS = 20;
+    const ROWS = 20;
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const messageEl = document.getElementById('message');
+    const restartBtn = document.getElementById('restart');
+
+    let snake, dir, nextDir, food, score, running, interval;
+
+    function init() {
+      snake = [{x:10, y:10}, {x:9, y:10}, {x:8, y:10}];
+      dir = {x:1, y:0};
+      nextDir = {x:1, y:0};
+      score = 0;
+      running = false;
+      scoreEl.textContent = 'Score: 0';
+      messageEl.textContent = 'Press any arrow key to start';
+      restartBtn.style.display = 'none';
+      placeFood();
+      draw();
+    }
+
+    function placeFood() {
+      let pos;
+      do {
+        pos = {
+          x: Math.floor(Math.random() * COLS),
+          y: Math.floor(Math.random() * ROWS)
+        };
+      } while (snake.some(s => s.x === pos.x && s.y === pos.y));
+      food = pos;
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Food
+      ctx.fillStyle = '#ff4466';
+      ctx.beginPath();
+      ctx.arc(
+        food.x * CELL + CELL/2,
+        food.y * CELL + CELL/2,
+        CELL/2 - 2, 0, Math.PI * 2
+      );
+      ctx.fill();
+
+      // Snake
+      snake.forEach((seg, i) => {
+        ctx.fillStyle = i === 0 ? '#00ff88' : '#00cc6a';
+        ctx.fillRect(seg.x * CELL + 1, seg.y * CELL + 1, CELL - 2, CELL - 2);
+      });
+    }
+
+    function step() {
+      dir = nextDir;
+      const head = {x: snake[0].x + dir.x, y: snake[0].y + dir.y};
+
+      // Wall collision
+      if (head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= ROWS) {
+        gameOver(); return;
+      }
+      // Self collision
+      if (snake.some(s => s.x === head.x && s.y === head.y)) {
+        gameOver(); return;
+      }
+
+      snake.unshift(head);
+
+      if (head.x === food.x && head.y === food.y) {
+        score++;
+        scoreEl.textContent = 'Score: ' + score;
+        placeFood();
+      } else {
+        snake.pop();
+      }
+
+      draw();
+    }
+
+    function gameOver() {
+      clearInterval(interval);
+      running = false;
+      messageEl.textContent = 'Game over! Score: ' + score;
+      restartBtn.style.display = 'inline-block';
+    }
+
+    function startGame() {
+      if (running) return;
+      running = true;
+      messageEl.textContent = '';
+      interval = setInterval(step, 120);
+    }
+
+    document.addEventListener('keydown', e => {
+      const moves = {
+        ArrowUp:    {x:0,  y:-1},
+        ArrowDown:  {x:0,  y:1},
+        ArrowLeft:  {x:-1, y:0},
+        ArrowRight: {x:1,  y:0}
+      };
+      if (moves[e.key]) {
+        e.preventDefault();
+        const m = moves[e.key];
+        // Prevent reversing
+        if (m.x !== -dir.x || m.y !== -dir.y) nextDir = m;
+        startGame();
+      }
+    });
+
+    restartBtn.addEventListener('click', () => {
+      clearInterval(interval);
+      init();
+    });
+
+    init();
+  </script>
+</body>
+</html>
